@@ -9,8 +9,50 @@ import { useToastStore } from "@/store/toast";
 import { CHAINS, DST_TOKENS, SRC_TOKENS } from "@/lib/marketData";
 import { isValidStellarPublicKey } from "@/lib/stellarAddress";
 import { formatTokenAmount } from "@/lib/format";
+import {
+  applySlippage,
+  compare,
+  decimal,
+  div,
+  format as formatDecimal,
+  fromNumber,
+  isPositive,
+  mul,
+  parseRounded,
+  rescale,
+  sub,
+  toNumber,
+  tryParseDecimal,
+  zero,
+  type Decimal,
+} from "@/lib/decimal";
 import { useTranslation } from "@/lib/i18n/I18nProvider";
 import type { MessageKey } from "@/lib/i18n";
+
+
+/** Precision used for quote/estimate amounts (max supported asset decimals). */
+const QUOTE_DECIMALS = 18;
+const USD_DECIMALS = 6;
+/** Indicative estimate haircut when no quote is available yet (0.998). */
+const ESTIMATE_FACTOR = decimal(BigInt(998), 3);
+const MAX_SLIPPAGE = decimal(BigInt(50), 0);
+
+function toAmount(value: string, decimals: number): Decimal {
+  return tryParseDecimal(value, decimals) ?? zero(decimals);
+}
+
+function toQuoteAmount(value: string): Decimal {
+  try {
+    return parseRounded(value, QUOTE_DECIMALS);
+  } catch {
+    return zero(QUOTE_DECIMALS);
+  }
+}
+
+function clampSlippage(value: Decimal | null): Decimal {
+  if (!value) return zero(0);
+  return compare(value, MAX_SLIPPAGE) > 0 ? MAX_SLIPPAGE : value;
+}
 
 export const DEFAULT_SLIPPAGE_PCT = 0.5;
 export const HIGH_PRICE_IMPACT_THRESHOLD_PCT = 3;
@@ -133,7 +175,7 @@ export function SwapCard({ initialAmount = "", previewQuote, onPreviewSubmit }: 
   }, [showChainPicker]);
 
   const debouncedAmount = useDebouncedValue(srcAmount, 500);
-  const hasAmount = Boolean(debouncedAmount) && parseFloat(debouncedAmount) > 0;
+  const hasAmount = isPositive(toAmount(debouncedAmount, srcToken.decimals));
   const { quote: fetchedQuote, isLoading: quoteIsLoading, error: quoteError, quoteFetchedAt } = useQuote(
     hasAmount && !previewQuote
       ? {
@@ -175,7 +217,7 @@ export function SwapCard({ initialAmount = "", previewQuote, onPreviewSubmit }: 
     if (!prev || prev.quote === quote) return;
 
     const delta = {
-      dstAmount: parseFloat(quote.dstAmount) - parseFloat(prev.quote.dstAmount),
+      dstAmount: toNumber(sub(toQuoteAmount(quote.dstAmount), toQuoteAmount(prev.quote.dstAmount))),
       priceImpactPct: quote.priceImpactPct - prev.quote.priceImpactPct,
     };
     if (delta.dstAmount === 0 && delta.priceImpactPct === 0) return;
@@ -188,15 +230,28 @@ export function SwapCard({ initialAmount = "", previewQuote, onPreviewSubmit }: 
   const dstAddressError = dstAddress && !isValidStellarPublicKey(dstAddress) ? t("swap.destination.invalidAddress") : null;
 
   // ── Derived display values ─────────────────────────────────────────────────
-  const dstAmount = quote
-    ? parseFloat(quote.dstAmount)
-    : srcAmount
-      ? (parseFloat(srcAmount) * srcToken.priceUsd) / dstToken.priceUsd * 0.998
-      : 0;
+  // All money math below is exact decimal/BigInt (see src/lib/decimal.ts).
+  const srcAmountDec = toAmount(srcAmount, srcToken.decimals);
+  const dstAmount: Decimal = quote
+    ? toQuoteAmount(quote.dstAmount)
+    : isPositive(srcAmountDec)
+      ? mul(
+          div(
+            mul(srcAmountDec, fromNumber(srcToken.priceUsd, USD_DECIMALS), QUOTE_DECIMALS),
+            fromNumber(dstToken.priceUsd, USD_DECIMALS),
+            QUOTE_DECIMALS,
+          ),
+          ESTIMATE_FACTOR,
+          QUOTE_DECIMALS,
+        )
+      : zero(QUOTE_DECIMALS);
 
-  const srcValueUSD = srcAmount ? parseFloat(srcAmount) * srcToken.priceUsd : 0;
-  const parsedSlippagePct = Math.max(0, Math.min(50, parseFloat(slippagePct) || 0));
-  const minOut = dstAmount > 0 ? (dstAmount * (1 - parsedSlippagePct / 100)).toFixed(dstToken.symbol === "XLM" ? 2 : 4) : "0";
+  const srcValueUSD = toNumber(mul(srcAmountDec, fromNumber(srcToken.priceUsd, USD_DECIMALS), USD_DECIMALS));
+  const slippageDec = clampSlippage(tryParseDecimal(slippagePct, 4));
+  // minOut is floored: the signed protection never exceeds what slippage allows.
+  const minOut = isPositive(dstAmount)
+    ? formatDecimal(rescale(applySlippage(dstAmount, slippageDec), dstToken.symbol === "XLM" ? 2 : 4, "floor"), { trimZeros: false })
+    : "0";
   const hasHighPriceImpact = quote ? quote.priceImpactPct > HIGH_PRICE_IMPACT_THRESHOLD_PCT : false;
 
   const quoteErrorType = (() => {
@@ -215,8 +270,7 @@ export function SwapCard({ initialAmount = "", previewQuote, onPreviewSubmit }: 
   const submission = useSwapSubmission();
   const isSubmitting = submission.status in SUBMISSION_LABEL_KEY;
   const canSwap =
-    Boolean(srcAmount) &&
-    parseFloat(srcAmount) > 0 &&
+    isPositive(srcAmountDec) &&
     !quoting &&
     !isSubmitting &&
     !dstAddressError;
@@ -230,7 +284,9 @@ export function SwapCard({ initialAmount = "", previewQuote, onPreviewSubmit }: 
   const handleAmountChange = (raw: string) => {
     // The field is `type="text"` (a `type="number"` input silently reformats
     // high-precision decimals) so keep only digits and a single dot here.
-    const cleaned = raw.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
+    // A "," is accepted as the locale decimal separator (e.g. es: "1,5");
+    // "e", "-" and grouping are stripped, so exponent/negative input can't land.
+    const cleaned = raw.replace(/,/g, ".").replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
     setSrcAmount(truncateToDecimals(cleaned, srcToken.decimals));
   };
 
@@ -532,7 +588,7 @@ export function SwapCard({ initialAmount = "", previewQuote, onPreviewSubmit }: 
               ) : (
                 <div className="flex items-baseline gap-2">
                   <div className="text-3xl font-light text-vx-text num">
-                    {dstAmount > 0
+                    {isPositive(dstAmount)
                       ? formatTokenAmount(dstAmount, undefined, {
                           maximumFractionDigits: dstToken.symbol === "XLM" ? 2 : 4,
                         })

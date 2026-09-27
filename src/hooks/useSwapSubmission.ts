@@ -6,6 +6,7 @@ import { useWalletStore } from "@/store/wallet";
 import { useToastStore } from "@/store/toast";
 import { decodeXdr, validateSwapXdr, XdrMismatchError } from "@/lib/xdrReview";
 import type { QuoteRequest } from "@/lib/types";
+import { saveLastSubmittedIntent } from "@/lib/intentLifecycle";
 
 export type SwapSubmissionStatus =
   | "idle"
@@ -149,6 +150,8 @@ export function useSwapSubmission() {
 
       setStatus("submitting");
       await submitIntent(newIntentId, signedXdr);
+      // Persist so IntentTracker survives a reload mid-flight (#428).
+      saveLastSubmittedIntent(newIntentId);
 
       advance("success");
       useToastStore.getState().addToast("Swap submitted successfully.", "success");

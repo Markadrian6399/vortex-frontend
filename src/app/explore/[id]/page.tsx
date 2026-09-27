@@ -6,6 +6,7 @@ import { CopyButton } from "@/components/CopyButton";
 import { Footer } from "@/components/Footer";
 import { CopyButton } from "@/components/CopyButton";
 import { IntentStatusBadge } from "@/components/IntentStatusBadge";
+import { IntentTracker } from "@/components/IntentTracker";
 import { Nav } from "@/components/Nav";
 import { SkeletonDetailCard } from "@/components/Skeleton";
 import { CopyButton } from "@/components/CopyButton";
@@ -111,6 +112,10 @@ export default function IntentDetailPage({
                 completed-swap record.
               </p>
             )}
+
+            <div className="print:hidden">
+              <IntentTracker intentId={intent.id} hideDetailsLink />
+            </div>
 
             <div className="grid sm:grid-cols-2 gap-4">
               {[

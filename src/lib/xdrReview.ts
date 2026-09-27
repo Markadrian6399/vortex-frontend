@@ -25,6 +25,15 @@ import {
   Operation,
   Asset,
 } from "@stellar/stellar-sdk";
+import {
+  compare,
+  decimal,
+  deviationPct,
+  format as formatDecimal,
+  isPositive,
+  STELLAR_DECIMALS,
+  tryParseDecimal,
+} from "@/lib/decimal";
 
 // Amount tolerance: allow up to 1 % deviation between the quoted amount and
 // what the relay encoded, to accommodate minor rounding in stroops conversion.
@@ -231,15 +240,15 @@ export function validateSwapXdr(
     }
 
     // Check amount within tolerance.
-    const encodedAmount = parseFloat(op.amount);
-    const expectedAmount = parseFloat(params.srcAmount);
-    if (!isNaN(encodedAmount) && !isNaN(expectedAmount) && expectedAmount > 0) {
-      const deviationPct =
-        (Math.abs(encodedAmount - expectedAmount) / expectedAmount) * 100;
-      if (deviationPct > AMOUNT_TOLERANCE_PCT) {
+    // Compared in stroops (BigInt) so no float rounding can mask a deviation.
+    const encodedAmount = tryParseDecimal(op.amount, STELLAR_DECIMALS);
+    const expectedAmount = tryParseDecimal(params.srcAmount, STELLAR_DECIMALS);
+    if (encodedAmount && expectedAmount && isPositive(expectedAmount)) {
+      const deviation = deviationPct(encodedAmount, expectedAmount, 2);
+      if (compare(deviation, decimal(BigInt(AMOUNT_TOLERANCE_PCT), 0)) > 0) {
         throw new XdrMismatchError(
           `Transaction amount mismatch: relay encoded ${op.amount} ` +
-            `but you entered ${params.srcAmount} (deviation ${deviationPct.toFixed(2)}% > ${AMOUNT_TOLERANCE_PCT}% tolerance). ` +
+            `but you entered ${params.srcAmount} (deviation ${formatDecimal(deviation, { trimZeros: false })}% > ${AMOUNT_TOLERANCE_PCT}% tolerance). ` +
             `Signing blocked.`
         );
       }
@@ -282,8 +291,8 @@ export function validateRegistrationXdr(
     // order of magnitude here; use a wider 20 % tolerance).
     // If the op asset is XLM we can do a rough check; otherwise skip.
     if (op.asset === "XLM (native)" && params.bondUsd > 0) {
-      const encodedAmount = parseFloat(op.amount);
-      if (!isNaN(encodedAmount) && encodedAmount <= 0) {
+      const encodedAmount = tryParseDecimal(op.amount, STELLAR_DECIMALS, { allowNegative: true });
+      if (encodedAmount && !isPositive(encodedAmount)) {
         throw new XdrMismatchError(
           `Registration bond amount is zero or negative in the encoded transaction — refusing to sign.`
         );

@@ -8,6 +8,8 @@ import { Footer } from "@/components/Footer";
 import { SwapCard } from "@/components/SwapCard";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { OnboardingHints } from "@/components/OnboardingHints";
+import { IntentTracker } from "@/components/IntentTracker";
+import { useLastSubmittedIntent } from "@/hooks/useIntentLifecycle";
 import { CHAINS } from "@/lib/marketData";
 import { useTranslation } from "@/lib/i18n/I18nProvider";
 import type { MessageKey } from "@/lib/i18n/index";
@@ -103,6 +105,19 @@ function SwapCardWithPrefill() {
   return <SwapCard {...props} />;
 }
 
+// ─── Post-submit tracker ──────────────────────────────────────────────────────
+// Shown under the swap card after a submit (and after reloads mid-flight).
+
+function LastIntentTracker() {
+  const [intentId, setIntentId] = useLastSubmittedIntent();
+  if (!intentId) return null;
+  return (
+    <div className="mt-5">
+      <IntentTracker intentId={intentId} onDismiss={() => setIntentId(null)} />
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
@@ -186,6 +201,8 @@ export default function HomePage() {
             <Suspense fallback={<SwapCard />}>
               <SwapCardWithPrefill />
             </Suspense>
+
+            <LastIntentTracker />
 
             {/* Supported chains */}
             <div className="mt-5">
