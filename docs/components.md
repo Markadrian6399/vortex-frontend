@@ -141,3 +141,32 @@ next-step guidance for each state.
   exposes a cancel endpoint today, so no Cancel action is shown. When one
   lands, add it behind a feature flag with a confirmation dialog and the
   standard XDR review step. Refund execution is out of scope.
+
+## `FeedbackForm`
+
+[`src/components/FeedbackForm.tsx`](../src/components/FeedbackForm.tsx)
+
+"Suggest a feature" intake for users who don't file GitHub issues. A toggle in
+the footer opens a small form (title + description); submitting opens GitHub's
+new-issue page in a new tab, pre-filled by
+[`buildFeatureRequestUrl`](../src/lib/featureRequest.ts) with the `enhancement`
+label and a body that follows
+[`feature_request.md`](../.github/ISSUE_TEMPLATE/feature_request.md)'s sections.
+
+```tsx
+import { FeedbackForm } from "@/components/FeedbackForm";
+
+<FeedbackForm />;
+```
+
+**Props**: none. Already mounted in [`Footer`](../src/components/Footer.tsx).
+
+**Behaviour**
+
+- No backend: nothing is stored in-app, and posting the issue needs a GitHub
+  account. The form says so before the user submits.
+- Titles are capped at 120 characters and descriptions at 2,000 (longer text is
+  truncated with a note in the issue body), which keeps the URL within the
+  length browsers and GitHub reliably accept.
+- The `template` query parameter isn't used, because GitHub would then show the
+  template's empty body instead of the pre-filled one.

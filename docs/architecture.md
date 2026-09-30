@@ -98,7 +98,7 @@ hooks side by side).
 - **[`src/store/wallet.ts`](../src/store/wallet.ts)** (`useWalletStore`) — owns
   wallet connection state (`address`, `network`, `isConnected`, `isConnecting`,
   `error`) and the `connect` / `disconnect` / `hydrate` actions that talk to the
-  Freighter extension. Persisted to `localStorage` (key `vortex-wallet`) via
+  active wallet adapter. Persisted to `localStorage` (key `vortex-wallet`) via
   `zustand/middleware`'s `persist`, but only `address` / `network` /
   `isConnected` are persisted (see `partialize`) — transient fields like
   `isConnecting` and `error` never survive a reload. See

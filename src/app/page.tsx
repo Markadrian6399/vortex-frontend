@@ -13,6 +13,7 @@ import { useLastSubmittedIntent } from "@/hooks/useIntentLifecycle";
 import { CHAINS } from "@/lib/marketData";
 import { useTranslation } from "@/lib/i18n/I18nProvider";
 import type { MessageKey } from "@/lib/i18n/index";
+import { parseSwapLink } from "@/lib/swapLink";
 
 // ─── Intent Pipeline Visualization ────────────────────────────────────────────
 
@@ -93,16 +94,10 @@ function IntentPipeline() {
 
 function SwapCardWithPrefill() {
   const params = useSearchParams();
+  const parsed = parseSwapLink(params);
   const props: React.ComponentProps<typeof SwapCard> = {};
-  const srcChain = params.get("srcChain");
-  const srcToken = params.get("srcToken");
-  const amount   = params.get("amount");
-  const dstToken = params.get("dstToken");
-  if (srcChain) props.initialChain    = srcChain;
-  if (srcToken) props.initialSrcToken = srcToken;
-  if (amount)   props.initialAmount   = amount;
-  if (dstToken) props.initialDstToken = dstToken;
-  return <SwapCard {...props} />;
+  if (parsed.state) { props.initialChain = parsed.state.srcChain; props.initialSrcToken = parsed.state.srcToken; props.initialAmount = parsed.state.amount; props.initialDstToken = parsed.state.dstToken; }
+  return <div>{parsed.errors.length > 0 && <p role="status" className="mb-3 rounded border border-amber-400/50 p-2 text-xs">Some shared swap parameters were ignored.</p>}<SwapCard {...props} /></div>;
 }
 
 // ─── Post-submit tracker ──────────────────────────────────────────────────────
